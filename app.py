@@ -5,6 +5,8 @@ import pandas as pd
 import os
 import concurrent.futures
 import io
+import openpyxl
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 st.set_page_config(page_title="Számla Mester", page_icon="🚀", layout="wide")
 st.title("Realign-Számlafeldolgozó")
@@ -100,16 +102,35 @@ if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
     new_df = pd.DataFrame(all_new_rows)
 
     if master_file:
-        try:
-            old_df = pd.read_excel(master_file)
-            final_df = pd.concat([old_df, new_df], ignore_index=True)
-            st.info("Az új adatokat hozzáfűztük a feltöltött mester táblázathoz.")
-        except Exception as e:
-            st.error(f"Hiba a mester fájl beolvasásakor: {e}")
-            final_df = new_df
-    else:
-        final_df = new_df
-        st.warning("Nem töltöttél fel mester fájlt, így csak az új adatokat tartalmazza a táblázat.")
+    # 1. Megnyitjuk a meglévő fájlt úgy, hogy megmaradjon a formázás
+    wb = openpyxl.load_workbook(master_file)
+    
+    # Megkeressük a megfelelő fület (vagy az elsőt)
+    # Ha a szétválogatást használod, akkor a 'Bejövő' vagy 'Kimenő' fület:
+    ws = wb['Bejövő'] # Vagy wb.active
+    
+    # 2. Csak az ÚJ sorokat adjuk hozzá az aljához
+    for r in dataframe_to_rows(new_df, index=False, header=False):
+        ws.append(r)
+    
+    # 3. Mentés egy bufferbe a letöltéshez
+    output = io.BytesIO()
+    wb.save(output)
+    final_data = output.getvalue()
+else:
+    # Ha nincs mester fájl, marad a régi Pandas módszer az új fájlhoz
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        new_df.to_excel(writer, index=False, sheet_name='Számlák')
+    final_data = output.getvalue()
+
+# A letöltő gombnál pedig a 'final_data'-t használjuk
+st.download_button(
+    label="⬇️ Formátum-megőrző Excel letöltése",
+    data=final_data,
+    file_name="konyveles_frissitve.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
     # MEGJELENÍTÉS
     st.subheader("📊 Összesített táblázat")
