@@ -109,7 +109,7 @@ for res in all_results:
     st.balloons()
         
     except Exception as e:
-        st.error(f"Hiba a táblázat írásakor: {e}")
+    st.error(f"Hiba a táblázat írásakor: {e}")
 
     # Megjelenítés az appban is
     st.dataframe(pd.DataFrame(all_results))
