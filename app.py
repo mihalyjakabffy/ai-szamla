@@ -82,33 +82,29 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
             progress_bar.progress((i + 1) / len(uploaded_files))
             status_text.text(f"Feldolgozva: {i+1}/{len(uploaded_files)} számla")
 
-    # --- GOOGLE SHEETS ÍRÁS ---
-    try:
-        spreadsheet = gc.open(SHEET_NAME)
-        # Megpróbáljuk megnyitni a füleket, ha nem léteznek, hiba
-        try:
-            ws_in = spreadsheet.worksheet("Bejövő")
-            ws_out = spreadsheet.worksheet("Kimenő")
-        except:
-            st.error("Hiba: A táblázatban lennie kell 'Bejövő' és 'Kimenő' nevű munkalapnak!")
-            st.stop()
+# --- JAVÍTOTT ÍRÁS LOGIKA ---
 
-        for res in all_results:
-            # Sor előkészítése (Fontos az oszlopsorrend az Excelben!)
-            row = [
-                res.get("Szállító"), res.get("Számlaszám"), res.get("Számla kelte"),
-                res.get("Teljesítés dátuma"), res.get("Fizetési határidő"),
-                res.get("Kifizetés hónapja"), res.get("Nettó"), res.get("Áfa"),
-                res.get("Bruttó"), res.get("Pénznem"), res.get("Nettó HUF"),
-                res.get("Áfa HUF"), res.get("EUR fx")
-            ]
-            
-            # Szétválogatás
-            if "realign" in str(res.get("Szállító")).lower():
-                ws_out.append_row(row, value_input_option='USER_ENTERED')
-            else:
-                ws_in.append_row(row, value_input_option='USER_ENTERED')
-        
+for res in all_results:
+    # 1. Sor összeállítása
+    row = [
+        res.get("Szállító"), res.get("Számlaszám"), res.get("Számla kelte"),
+        res.get("Teljesítés dátuma"), res.get("Fizetési határidő"),
+        res.get("Kifizetés hónapja"), res.get("Nettó"), res.get("Áfa"),
+        res.get("Bruttó"), res.get("Pénznem"), res.get("Nettó HUF"),
+        res.get("Áfa HUF"), res.get("EUR fx")
+    ]
+    
+    # 2. Kiválasztjuk a fület (Kimenő vagy Bejövő)
+    target_ws = ws_out if "realign" in str(res.get("Szállító")).lower() else ws_in
+    
+    # 3. ROBUSZTUS KERESÉS: Megnézzük az A oszlop valódi végét
+    # get_all_values() visszaadja az összes sort, aminek a hossza a pontos sorzám
+    values = target_ws.get_all_values()
+    next_row_index = len(values) + 1
+    
+    # 4. append_row helyett update-et használunk egy konkrét tartományra
+    # Ez garantáltan az új sor elejére (A oszlop) fogja tenni az adatot
+    target_ws.update(range_name=f"A{next_row_index}", values=[row], value_input_option='USER_ENTERED')
         st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
         st.balloons()
         
