@@ -23,7 +23,7 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 
 try:
-    # Google Sheets csatlakozás
+    # Google Sheets csatlakozás (Kibővített jogosultságokkal)
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -82,34 +82,42 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
             progress_bar.progress((i + 1) / len(uploaded_files))
             status_text.text(f"Feldolgozva: {i+1}/{len(uploaded_files)} számla")
 
-# --- JAVÍTOTT ÍRÁS LOGIKA ---
+    # --- GOOGLE SHEETS ÍRÁS (ROBUSZTUS VERZIÓ) ---
+    try:
+        # Itt nyitjuk meg a táblázatot és a füleket!
+        spreadsheet = gc.open(SHEET_NAME)
+        ws_in = spreadsheet.worksheet("Bejövő")
+        ws_out = spreadsheet.worksheet("Kimenő")
 
-for res in all_results:
-    # 1. Sor összeállítása
-    row = [
-        res.get("Szállító"), res.get("Számlaszám"), res.get("Számla kelte"),
-        res.get("Teljesítés dátuma"), res.get("Fizetési határidő"),
-        res.get("Kifizetés hónapja"), res.get("Nettó"), res.get("Áfa"),
-        res.get("Bruttó"), res.get("Pénznem"), res.get("Nettó HUF"),
-        res.get("Áfa HUF"), res.get("EUR fx")
-    ]
-    
-    # 2. Kiválasztjuk a fület (Kimenő vagy Bejövő)
-    target_ws = ws_out if "realign" in str(res.get("Szállító")).lower() else ws_in
-    
-    # 3. ROBUSZTUS KERESÉS: Megnézzük az A oszlop valódi végét
-    # get_all_values() visszaadja az összes sort, aminek a hossza a pontos sorzám
-    values = target_ws.get_all_values()
-    next_row_index = len(values) + 1
-    
-    # 4. append_row helyett update-et használunk egy konkrét tartományra
-    # Ez garantáltan az új sor elejére (A oszlop) fogja tenni az adatot
-    target_ws.update(range_name=f"A{next_row_index}", values=[row], value_input_option='USER_ENTERED')
-    st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
-    st.balloons()
+        for res in all_results:
+            row = [
+                res.get("Szállító"), res.get("Számlaszám"), res.get("Számla kelte"),
+                res.get("Teljesítés dátuma"), res.get("Fizetési határidő"),
+                res.get("Kifizetés hónapja"), res.get("Nettó"), res.get("Áfa"),
+                res.get("Bruttó"), res.get("Pénznem"), res.get("Nettó HUF"),
+                res.get("Áfa HUF"), res.get("EUR fx")
+            ]
+            
+            # Cél fül kiválasztása a "Realign" név alapján
+            target_ws = ws_out if "realign" in str(res.get("Szállító")).lower() else ws_in
+            
+            # Robusztus sorkeresés
+            values = target_ws.get_all_values()
+            next_row_index = len(values) + 1
+            
+            # Adat beillesztése
+            target_ws.update(
+                range_name=f"A{next_row_index}", 
+                values=[row], 
+                value_input_option='USER_ENTERED'
+            )
+        
+        # Ide került a siker üzenet (a ciklusból ki)
+        st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
+        st.balloons()
         
     except Exception as e:
-    st.error(f"Hiba a táblázat írásakor: {e}")
+        st.error(f"Hiba a táblázat írásakor: {e}")
 
-    # Megjelenítés az appban is
+    # Megjelenítés a weboldalon
     st.dataframe(pd.DataFrame(all_results))
