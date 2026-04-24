@@ -54,7 +54,6 @@ def process_invoice(uploaded_file, prompt, model):
         
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(clean_json)
-        data["Fájlnév"] = filename
         return data
     except Exception as e:
         return {"Fájlnév": filename, "Szállító": f"HIBA: {str(e)}"}
@@ -72,9 +71,9 @@ if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
     Mezők:
     {
       "Szállító": "...", "Számlaszám": "...", "Számla kelte": "YYYY-MM-DD",
-      "Számla teljesítésének dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
-      "Teljesítés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
-      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó huf": "szám", "Áfa huf": "szám"
+      "Teljesítés dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
+      "Kifizetés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
+      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó HUF": "szám", "Áfa HUF": "szám"
     }
     Szabályok: Teljesítés hónapja csak a hónap neve legyen (pl. január). Pénznemnél tilos a Ft/€ jel, csak HUF/EUR.
     """
@@ -94,9 +93,6 @@ if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
 
     # ADATOK ÖSSZEFŰZÉSE
     new_df = pd.DataFrame(all_new_rows)
-    # Oszlopok sorrendje
-    cols = ["Fájlnév"] + [c for c in new_df.columns if c != "Fájlnév"]
-    new_df = new_df[cols]
 
     if master_file:
         try:
