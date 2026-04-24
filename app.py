@@ -7,8 +7,8 @@ import concurrent.futures
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Realign AI számlakezelő", page_icon="📊", layout="wide")
-st.title("🚀 Realign számlakezelő AI -> Google Sheets Integráció")
+st.set_page_config(page_title="Realign AI Táblázatkezelő", page_icon="📊", layout="wide")
+st.title("🚀 Realign AI -> Google Sheets Integráció")
 
 # --- BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
@@ -42,7 +42,6 @@ try:
 
     # --- ENGINE (MODELL) VÁLASZTÓ ---
     valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # Megkeressük a flash-t, hogy az legyen az alapértelmezett (ha nincs, marad a 0. index)
     alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
     selected_model_name = st.sidebar.selectbox("🤖 AI Modell (Engine):", valid_models, index=alap_index)
     model = genai.GenerativeModel(selected_model_name)
@@ -54,22 +53,19 @@ except Exception as e:
 # --- FELTÖLTÉS ---
 uploaded_files = st.file_uploader("Számlák feltöltése (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
-# --- JAVÍTOTT, BIZTONSÁGOS FELDOLGOZÓ FÜGGVÉNY ---
+# --- BIZTONSÁGOS FELDOLGOZÓ FÜGGVÉNY ---
 def process_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
     temp_path = f"temp_{filename}"
-    sample_file = None # Inicializáljuk, hogy a finally blokk lássa
+    sample_file = None 
     
     try:
-        # Fájl mentése helyileg
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
             
-        # Feltöltés a Gemini felhőbe
         sample_file = genai.upload_file(path=temp_path)
         response = model.generate_content([sample_file, prompt])
         
-        # 1. Okos JSON kinyerés (megkeresi a { és } közötti részt)
         text = response.text
         start_idx = text.find('{')
         end_idx = text.rfind('}')
@@ -83,11 +79,10 @@ def process_invoice(uploaded_file, prompt, model):
         return {"Szállító": f"HIBA: {filename} - {str(e)}"}
         
     finally:
-        # 2. Helyi fájl TÖRLÉSE
+        # Helyi és felhős takarítás
         if os.path.exists(temp_path):
             try: os.remove(temp_path)
             except: pass
-        # 3. Google felhős fájl TÖRLÉSE (Adatvédelem!)
         if sample_file:
             try: genai.delete_file(sample_file.name)
             except: pass
@@ -115,76 +110,55 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
             progress_bar.progress((i + 1) / len(uploaded_files))
             status_text.text(f"Feldolgozva: {i+1}/{len(uploaded_files)} számla")
 
-    # --- GOOGLE SHEETS ÍRÁS (Oszlop-pontos illesztés) ---
+    # --- KÖTEGELT (BATCH) GOOGLE SHEETS ÍRÁS ---
     try:
         spreadsheet = gc.open(SHEET_NAME)
         ws_in = spreadsheet.worksheet("Bejövő")
         ws_out = spreadsheet.worksheet("Kimenő")
 
+        incoming_rows = []
+        outgoing_rows = []
+
+        # 1. Adatok szétválogatása a memóriában (nincs API hívás)
         for res in all_results:
             is_outgoing = "realign" in str(res.get("Szállító", "")).lower()
             
             if is_outgoing:
-                # KIMENŐ OSZLOPOK (A-tól U-ig)
-                target_ws = ws_out
                 row = [
-                    "", # A: Ss
-                    "", # B: Azonosító
-                    "", # C: Megrendelő
-                    "", # D: Projekt
-                    res.get("Vevő", ""), # E: Vevő
-                    res.get("Számlaszám", ""), # F: Számlaszám
-                    "", # G: Számla tárgya
-                    res.get("Számla kelte", ""), # H: Számla kelte
-                    res.get("Teljesítés dátuma", ""), # I: Teljesítés
-                    res.get("Fizetési határidő", ""), # J: Fizetési
-                    "", # K: Kifizetés
-                    "", # L: Időszak
-                    res.get("Kifizetés hónapja", ""), # M: Teljesítés hónapja
-                    res.get("Nettó", ""), # N: Nettó
-                    res.get("Áfa", ""), # O: Áfa
-                    res.get("Bruttó", ""), # P: Bruttó
-                    res.get("Pénznem", ""), # Q: Pénznem
-                    res.get("Nettó HUF", ""), # R: Nettó HUF
-                    res.get("Áfa HUF", ""), # S: Áfa HUF
-                    "", # T: Fizetve
-                    res.get("EUR fx", "") # U: EUR fx
+                    "", "", "", "", res.get("Vevő", ""), res.get("Számlaszám", ""), 
+                    "", res.get("Számla kelte", ""), res.get("Teljesítés dátuma", ""), 
+                    res.get("Fizetési határidő", ""), "", "", res.get("Kifizetés hónapja", ""), 
+                    res.get("Nettó", ""), res.get("Áfa", ""), res.get("Bruttó", ""), 
+                    res.get("Pénznem", ""), res.get("Nettó HUF", ""), res.get("Áfa HUF", ""), 
+                    "", res.get("EUR fx", "")
                 ]
+                outgoing_rows.append(row)
             else:
-                # BEJÖVŐ OSZLOPOK (A-tól V-ig)
-                target_ws = ws_in
                 row = [
-                    "", # A: Ss
-                    "", # B: Kategória
-                    "", # C: Projekt
-                    "", # D: Azonosító
-                    res.get("Szállító", ""), # E: Szállító
-                    res.get("Számlaszám", ""), # F: Számlaszám
-                    "", # G: Számla tárgya
-                    "", # H: Kategória
-                    res.get("Számla kelte", ""), # I: Számla kelte
-                    res.get("Teljesítés dátuma", ""), # J: Teljesítés
-                    res.get("Fizetési határidő", ""), # K: Fizetési
-                    "", # L: Kifizetés
-                    "", # M: Időszak
-                    res.get("Kifizetés hónapja", ""), # N: Teljesítés hónapja
-                    res.get("Nettó", ""), # O: Nettó
-                    res.get("Áfa", ""), # P: Áfa
-                    res.get("Bruttó", ""), # Q: Bruttó
-                    res.get("Pénznem", ""), # R: Pénznem
-                    res.get("Nettó HUF", ""), # S: Nettó HUF
-                    res.get("Áfa HUF", ""), # T: Áfa HUF
-                    "", # U: Fizetve
-                    res.get("EUR fx", "") # V: EUR fx
+                    "", "", "", "", res.get("Szállító", ""), res.get("Számlaszám", ""), 
+                    "", "", res.get("Számla kelte", ""), res.get("Teljesítés dátuma", ""), 
+                    res.get("Fizetési határidő", ""), "", "", res.get("Kifizetés hónapja", ""), 
+                    res.get("Nettó", ""), res.get("Áfa", ""), res.get("Bruttó", ""), 
+                    res.get("Pénznem", ""), res.get("Nettó HUF", ""), res.get("Áfa HUF", ""), 
+                    "", res.get("EUR fx", "")
                 ]
-            
-            # Robusztus sorkeresés
-            values = target_ws.get_all_values()
-            next_row_index = len(values) + 1
-            
-            target_ws.update(
-                range_name=f"A{next_row_index}", 
-                values=[row], 
+                incoming_rows.append(row)
+
+        # 2. Bejövő adatok EGYBEN történő kiírása
+        if incoming_rows:
+            next_row_index_in = len(ws_in.get_all_values()) + 1
+            ws_in.update(
+                range_name=f"A{next_row_index_in}", 
+                values=incoming_rows, 
+                value_input_option='USER_ENTERED'
+            )
+
+        # 3. Kimenő adatok EGYBEN történő kiírása
+        if outgoing_rows:
+            next_row_index_out = len(ws_out.get_all_values()) + 1
+            ws_out.update(
+                range_name=f"A{next_row_index_out}", 
+                values=outgoing_rows, 
                 value_input_option='USER_ENTERED'
             )
         
