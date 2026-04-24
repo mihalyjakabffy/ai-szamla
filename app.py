@@ -17,7 +17,7 @@ if not API_KEY:
 
 # --- AI Konfiguráció ---
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+model = genai.GenerativeModel('gemini-flash-latest')
 
 # --- Fájl feltöltés ---
 uploaded_file = st.file_uploader("Húzd ide a számlát (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"])
