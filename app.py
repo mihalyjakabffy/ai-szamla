@@ -7,8 +7,8 @@ import concurrent.futures
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Realign AI számlamenedzser", page_icon="📊", layout="wide")
-st.title("🚀 Realign AI számlamendzsment -> Google Sheets Integráció")
+st.set_page_config(page_title="Realign AI Táblázatkezelő", page_icon="📊", layout="wide")
+st.title("🚀 Realign AI -> Google Sheets Integráció")
 
 # --- BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
@@ -40,7 +40,7 @@ try:
     
     SHEET_NAME = st.sidebar.selectbox("📁 Válaszd ki a Google Táblázatot:", sheet_names)
 
-    # --- VISSZAÁLLÍTOTT ENGINE (MODELL) VÁLASZTÓ ---
+    # --- ENGINE (MODELL) VÁLASZTÓ ---
     valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     # Megkeressük a flash-t, hogy az legyen az alapértelmezett (ha nincs, marad a 0. index)
     alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
@@ -54,21 +54,42 @@ except Exception as e:
 # --- FELTÖLTÉS ---
 uploaded_files = st.file_uploader("Számlák feltöltése (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
+# --- JAVÍTOTT, BIZTONSÁGOS FELDOLGOZÓ FÜGGVÉNY ---
 def process_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
     temp_path = f"temp_{filename}"
+    sample_file = None # Inicializáljuk, hogy a finally blokk lássa
+    
     try:
+        # Fájl mentése helyileg
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
+            
+        # Feltöltés a Gemini felhőbe
         sample_file = genai.upload_file(path=temp_path)
         response = model.generate_content([sample_file, prompt])
-        clean_json = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_json)
+        
+        # 1. Okos JSON kinyerés (megkeresi a { és } közötti részt)
+        text = response.text
+        start_idx = text.find('{')
+        end_idx = text.rfind('}')
+        if start_idx != -1 and end_idx != -1:
+            clean_json = text[start_idx:end_idx+1]
+            return json.loads(clean_json)
+        else:
+            return {"Szállító": f"HIBA: Nem található JSON a válaszban. Fájl: {filename}"}
+            
     except Exception as e:
-        return {"Szállító": f"HIBA: {filename}"}
+        return {"Szállító": f"HIBA: {filename} - {str(e)}"}
+        
     finally:
+        # 2. Helyi fájl TÖRLÉSE
         if os.path.exists(temp_path):
             try: os.remove(temp_path)
+            except: pass
+        # 3. Google felhős fájl TÖRLÉSE (Adatvédelem!)
+        if sample_file:
+            try: genai.delete_file(sample_file.name)
             except: pass
 
 if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"):
