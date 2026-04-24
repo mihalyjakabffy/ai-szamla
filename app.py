@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import concurrent.futures
 import gspread
+import re
 from google.oauth2.service_account import Credentials
 from google.api_core.exceptions import GoogleAPIError
 import google.auth.exceptions
@@ -61,6 +62,42 @@ except Exception as e:
 # --- FELTÖLTÉS ---
 uploaded_files = st.file_uploader("Számlák feltöltése (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
+# --- ADATTÍPUS TISZTÍTÓ FÜGGVÉNY (ÚJ) ---
+def clean_number(val, to_float=False):
+    """Megtisztítja a szöveges számokat (pl. '10 000 Ft', '1.234,50') igazi számmá."""
+    if val is None:
+        return ""
+    val_str = str(val).strip()
+    if not val_str or val_str.upper() in ["HIBA: NEM TALÁLHATÓ", "NONE", "NULL", "-", "HIBA"]:
+        return ""
+    
+    # Eltávolítunk minden betűt (pl. Ft, EUR, HUF)
+    val_str = re.sub(r'[A-Za-z]', '', val_str)
+    # Eltávolítjuk a szóközöket
+    val_str = val_str.replace(' ', '').replace('\xa0', '')
+    
+    # Okos tizedesjel felismerés
+    if '.' in val_str and ',' in val_str:
+        if val_str.rfind(',') > val_str.rfind('.'): # pl. 1.234,56
+            val_str = val_str.replace('.', '').replace(',', '.')
+        else: # pl. 1,234.56
+            val_str = val_str.replace(',', '')
+    elif ',' in val_str:
+        parts = val_str.split(',')
+        if len(parts) == 2 and len(parts[1]) == 3: # valószínűleg ezres elválasztó (pl 123,456)
+            val_str = val_str.replace(',', '')
+        else:
+            val_str = val_str.replace(',', '.') # tizedesvessző
+            
+    try:
+        num = float(val_str)
+        if to_float:
+            return num
+        else:
+            return int(round(num)) # Egész számra kerekítjük az összegeket
+    except ValueError:
+        return val # Ha valamiért mégis szöveg maradna, visszaadjuk eredetiben
+
 # --- BIZTONSÁGOS FELDOLGOZÓ FÜGGVÉNY ---
 def process_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
@@ -80,10 +117,8 @@ def process_invoice(uploaded_file, prompt, model):
         )
         
         try:
-            # Mivel a Google garantálja a JSON formátumot, azonnal parse-olhatjuk
             return json.loads(response.text)
         except json.JSONDecodeError:
-            # Ha mégis valami torzult adat jönne, elkapjuk a hibát
             return {"Szállító": f"HIBA: Érvénytelen JSON formátumot küldött az AI. Fájl: {filename}"}
         except GoogleAPIError as api_err:
             return {"Szállító": f"HIBA: AI szolgáltatás hiba (pl. túlterheltség). Fájl: {filename} - {api_err}"}
@@ -125,7 +160,7 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
             progress_bar.progress((i + 1) / len(uploaded_files))
             status_text.text(f"Feldolgozva: {i+1}/{len(uploaded_files)} számla")
 
-    # --- KÖTEGELT (BATCH) GOOGLE SHEETS ÍRÁS ---
+    # --- KÖTEGELT (BATCH) GOOGLE SHEETS ÍRÁS TISZTÍTOTT ADATOKKAL ---
     try:
         spreadsheet = gc.open(SHEET_NAME)
         ws_in = spreadsheet.worksheet("Bejövő")
@@ -134,18 +169,25 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
         incoming_rows = []
         outgoing_rows = []
 
-        # 1. Adatok szétválogatása a memóriában (nincs API hívás)
+        # 1. Adatok tisztítása és szétválogatása
         for res in all_results:
             is_outgoing = "realign" in str(res.get("Szállító", "")).lower()
+            
+            # Tisztítjuk a numerikus mezőket
+            netto = clean_number(res.get("Nettó"))
+            afa = clean_number(res.get("Áfa"))
+            brutto = clean_number(res.get("Bruttó"))
+            netto_huf = clean_number(res.get("Nettó HUF"))
+            afa_huf = clean_number(res.get("Áfa HUF"))
+            eur_fx = clean_number(res.get("EUR fx"), to_float=True)
             
             if is_outgoing:
                 row = [
                     "", "", "", "", res.get("Vevő", ""), res.get("Számlaszám", ""), 
                     "", res.get("Számla kelte", ""), res.get("Teljesítés dátuma", ""), 
                     res.get("Fizetési határidő", ""), "", "", res.get("Kifizetés hónapja", ""), 
-                    res.get("Nettó", ""), res.get("Áfa", ""), res.get("Bruttó", ""), 
-                    res.get("Pénznem", ""), res.get("Nettó HUF", ""), res.get("Áfa HUF", ""), 
-                    "", res.get("EUR fx", "")
+                    netto, afa, brutto, res.get("Pénznem", ""), netto_huf, afa_huf, 
+                    "", eur_fx
                 ]
                 outgoing_rows.append(row)
             else:
@@ -153,9 +195,8 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                     "", "", "", "", res.get("Szállító", ""), res.get("Számlaszám", ""), 
                     "", "", res.get("Számla kelte", ""), res.get("Teljesítés dátuma", ""), 
                     res.get("Fizetési határidő", ""), "", "", res.get("Kifizetés hónapja", ""), 
-                    res.get("Nettó", ""), res.get("Áfa", ""), res.get("Bruttó", ""), 
-                    res.get("Pénznem", ""), res.get("Nettó HUF", ""), res.get("Áfa HUF", ""), 
-                    "", res.get("EUR fx", "")
+                    netto, afa, brutto, res.get("Pénznem", ""), netto_huf, afa_huf, 
+                    "", eur_fx
                 ]
                 incoming_rows.append(row)
 
