@@ -66,16 +66,21 @@ def process_invoice(uploaded_file, prompt, model):
 if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
     all_new_rows = []
     
-    prompt = """
+   prompt = """
     Elemezd a számlát és adj JSON választ. Ha valami hiányzik: "HIBA: Nem található".
     Mezők:
     {
       "Szállító": "...", "Számlaszám": "...", "Számla kelte": "YYYY-MM-DD",
-      "Teljesítés dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
-      "Kifizetés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
-      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó HUF": "szám", "Áfa HUF": "szám"
+      "Számla teljesítésének dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
+      "Teljesítés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
+      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó huf": "szám", "Áfa huf": "szám",
+      "EUR fx": "szám"
     }
-    Szabályok: Teljesítés hónapja csak a hónap neve legyen (pl. január). Pénznemnél tilos a Ft/€ jel, csak HUF/EUR.
+    Szabályok: 
+    1. Teljesítés hónapja csak a hónap neve legyen (pl. január). 
+    2. Pénznemnél tilos a Ft/€ jel, csak HUF/EUR.
+    3. FORDÍTOTT ÁFA (eufad37): Ha a számlán a NAV "eufad37" kódját, vagy bármilyen "fordított adózás" jelzést látsz, tudd, hogy a számla nem tartalmaz fizetendő áfát! Ebben az esetben az "Áfa" és "Áfa huf" mezőkbe írj be 0-t, és ne dobj rá hibát.
+    4. EUR fx: Keresd meg a számlán az esetlegesen feltüntetett MNB Euró árfolyamot, és ide írd be tizedesponttal (pl. 395.45). Ha nincs ilyen árfolyam a számlán, írd be: "HIBA: Nem található".
     """
     
     progress_bar = st.progress(0)
