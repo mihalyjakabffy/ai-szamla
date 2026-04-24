@@ -112,4 +112,3 @@ if uploaded_files and st.button("Összes fájl feldolgozása"):
             data=csv,
             file_name="osszesitett_szamlak.csv",
             mime="text/csv",)
-            os.remove(temp_path)
