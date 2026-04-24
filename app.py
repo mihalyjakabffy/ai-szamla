@@ -5,8 +5,8 @@ import pandas as pd
 import os
 import concurrent.futures
 
-st.set_page_config(page_title="AI Tömeges Számlafeldolgozó", page_icon="⚡", layout="wide")
-st.title("⚡ AI Tömeges Számla- és Nyugtafeldolgozó (Turbó mód)")
+st.set_page_config(page_title="Realign Számlafeldolgozó", page_icon="⚡", layout="wide")
+st.title("⚡ Tömeges Számla- és Nyugtafeldolgozó AI (Turbó mód)")
 
 # --- API KULCS BEKÉRÉSE ---
 st.sidebar.header("Beállítások")
@@ -33,21 +33,17 @@ except Exception:
     st.stop()
 
 # --- FÜGGVÉNY EGYETLEN SZÁMLA FELDOLGOZÁSÁHOZ ---
-# Ezt fogja a gép egyszerre több szálon futtatni
 def process_single_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
     temp_path = f"temp_{filename}"
     
     try:
-        # Fájl kimentése
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
             
-        # Küldés az AI-nak
         sample_file = genai.upload_file(path=temp_path)
         response = model.generate_content([sample_file, prompt])
         
-        # JSON tisztítás
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         data = json.loads(clean_json)
         data["Fájlnév"] = filename
@@ -57,7 +53,6 @@ def process_single_invoice(uploaded_file, prompt, model):
         return {"Fájlnév": filename, "Szállító": f"HIBA: {str(e)}"}
         
     finally:
-        # Takarítás: töröljük a fájlt, amint végzett vele
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
@@ -69,33 +64,42 @@ uploaded_files = st.file_uploader("Húzd ide a számlákat (többet is kijelölh
 
 if uploaded_files and st.button("Összes fájl feldolgozása"):
     all_extracted_data = []
-    
     progress_bar = st.progress(0)
     status_text = st.empty()
     
+    # --- EZT A RÉSZT SZIGORÍTOTTUK (PROMPT ENGINEERING) ---
     prompt = """
-    Elemezd a csatolt számlát, és nyerd ki az adatokat JSON-ben. 
-    Ha valamit nem találsz, írd be: "HIBA: Nem található".
-    Formátum:
+    Elemezd a csatolt számlát, és nyerd ki az adatokat pontosan ebben a JSON formátumban.
+    Ha valamit egyértelműen nem találsz a számlán, az értékhez írd be: "HIBA: Nem található".
+    
     {
-      "Szállító": "...", "Számlaszám": "...", "Számla kelte": "YYYY-MM-DD",
-      "Számla teljesítésének dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
-      "Teljesítés hónapja": "YYYY-MM", "Nettó": "...", "Áfa": "...",
-      "Bruttó": "...", "Pénznem": "...", "Nettó huf": "...", "Áfa huf": "..."
+      "Szállító": "...", 
+      "Számlaszám": "...", 
+      "Számla kelte": "YYYY-MM-DD",
+      "Számla teljesítésének dátuma": "YYYY-MM-DD", 
+      "Fizetési határidő": "YYYY-MM-DD",
+      "Teljesítés hónapja": "...", 
+      "Nettó": "...", 
+      "Áfa": "...",
+      "Bruttó": "...", 
+      "Pénznem": "...", 
+      "Nettó huf": "...", 
+      "Áfa huf": "..."
     }
-    Csak a JSON-t válaszold!
+    
+    Szigorú formai szabályok:
+    1. Csak és kizárólag a tisztított JSON objektumot válaszold, semmi más magyarázatot!
+    2. A "Teljesítés hónapja" mezőbe KIZÁRÓLAG a hónap neve kerülhet szövegesen, magyarul, kisbetűvel (pl. január, február, március). Évszámot és sorszámot NE írj ide!
+    3. A "Pénznem" mező kötelezően 3 betűs ISO kód legyen (pl. forint esetén: HUF, euró esetén: EUR). Tilos a következőket használni: Ft, Forint, €, Euro!
+    4. A számoknál tizedespontot használj, és a számok mellé a mezőbe ne írj be pénznemet!
     """
     
     status_text.text("🚀 Párhuzamos feldolgozás indítása...")
     
-    # --- PÁRHUZAMOSÍTÁS (MULTITHREADING) ---
-    # max_workers=3 : Egyszerre 3 fájlt dolgoz fel. Ezt ne vedd sokkal feljebb az ingyenes limit miatt!
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        # Elindítjuk az összes feladatot a háttérben
         jovabagyott_feladatok = {executor.submit(process_single_invoice, file, prompt, model): file for file in uploaded_files}
         
         kesz_darab = 0
-        # Ahogy egy-egy szál végez, egyből frissítjük a felületet
         for future in concurrent.futures.as_completed(jovabagyott_feladatok):
             eredmeny = future.result()
             all_extracted_data.append(eredmeny)
