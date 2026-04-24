@@ -13,17 +13,16 @@ st.title("🚀 Realign AI -> Google Sheets Integráció")
 # --- BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
 API_KEY = st.sidebar.text_input("Gemini API kulcs:", type="password")
-SHEET_NAME = st.sidebar.text_input("Google Táblázat pontos neve:", value="Könyvelés 2024")
 
 if not API_KEY:
     st.warning("Kérlek, add meg az API kulcsodat a folytatáshoz!")
     st.stop()
 
-# AI és Google Sheets inicializálás
+# AI inicializálás
 genai.configure(api_key=API_KEY)
 
+# --- GOOGLE SHEETS CSATLAKOZÁS ÉS FÁJLLISTA ---
 try:
-    # Google Sheets csatlakozás
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -31,12 +30,25 @@ try:
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     gc = gspread.authorize(creds)
     
-    # Modell választó
+    # Elérhető táblázatok lekérése a legördülő menühöz
+    available_sheets = gc.list_spreadsheet_files()
+    sheet_names = [s['name'] for s in available_sheets]
+    
+    if not sheet_names:
+        st.sidebar.error("Nem található megosztott táblázat a Service Accounttal!")
+        st.stop()
+    
+    SHEET_NAME = st.sidebar.selectbox("📁 Válaszd ki a Google Táblázatot:", sheet_names)
+
+    # --- VISSZAÁLLÍTOTT ENGINE (MODELL) VÁLASZTÓ ---
     valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    selected_model_name = st.sidebar.selectbox("🤖 AI Modell:", valid_models, index=0)
+    # Megkeressük a flash-t, hogy az legyen az alapértelmezett (ha nincs, marad a 0. index)
+    alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
+    selected_model_name = st.sidebar.selectbox("🤖 AI Modell (Engine):", valid_models, index=alap_index)
     model = genai.GenerativeModel(selected_model_name)
+
 except Exception as e:
-    st.error(f"Hiba a csatlakozás során: {e}")
+    st.error(f"Hiba a Google-kapcsolat vagy a fájllista lekérése során: {e}")
     st.stop()
 
 # --- FELTÖLTÉS ---
@@ -60,7 +72,6 @@ def process_invoice(uploaded_file, prompt, model):
             except: pass
 
 if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"):
-    # FIGYELEM: A prompt kibővült a "Vevő" mezővel is!
     prompt = """
     Elemezd a számlát és adj JSON választ:
     {
@@ -83,7 +94,7 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
             progress_bar.progress((i + 1) / len(uploaded_files))
             status_text.text(f"Feldolgozva: {i+1}/{len(uploaded_files)} számla")
 
-    # --- GOOGLE SHEETS ÍRÁS (OSZLOP-PONTOS VERZIÓ) ---
+    # --- GOOGLE SHEETS ÍRÁS (Oszlop-pontos illesztés) ---
     try:
         spreadsheet = gc.open(SHEET_NAME)
         ws_in = spreadsheet.worksheet("Bejövő")
@@ -100,7 +111,7 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                     "", # B: Azonosító
                     "", # C: Megrendelő
                     "", # D: Projekt
-                    res.get("Vevő", ""), # E: Vevő (a partner neve)
+                    res.get("Vevő", ""), # E: Vevő
                     res.get("Számlaszám", ""), # F: Számlaszám
                     "", # G: Számla tárgya
                     res.get("Számla kelte", ""), # H: Számla kelte
@@ -108,13 +119,13 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                     res.get("Fizetési határidő", ""), # J: Fizetési
                     "", # K: Kifizetés
                     "", # L: Időszak
-                    res.get("Kifizetés hónapja", ""), # M: Teljesítés (hónapja)
+                    res.get("Kifizetés hónapja", ""), # M: Teljesítés hónapja
                     res.get("Nettó", ""), # N: Nettó
                     res.get("Áfa", ""), # O: Áfa
                     res.get("Bruttó", ""), # P: Bruttó
                     res.get("Pénznem", ""), # Q: Pénznem
-                    res.get("Nettó HUF", ""), # R: Nettó
-                    res.get("Áfa HUF", ""), # S: Áfa
+                    res.get("Nettó HUF", ""), # R: Nettó HUF
+                    res.get("Áfa HUF", ""), # S: Áfa HUF
                     "", # T: Fizetve
                     res.get("EUR fx", "") # U: EUR fx
                 ]
@@ -126,7 +137,7 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                     "", # B: Kategória
                     "", # C: Projekt
                     "", # D: Azonosító
-                    res.get("Szállító", ""), # E: Szállító (a partner neve)
+                    res.get("Szállító", ""), # E: Szállító
                     res.get("Számlaszám", ""), # F: Számlaszám
                     "", # G: Számla tárgya
                     "", # H: Kategória
@@ -135,33 +146,32 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                     res.get("Fizetési határidő", ""), # K: Fizetési
                     "", # L: Kifizetés
                     "", # M: Időszak
-                    res.get("Kifizetés hónapja", ""), # N: Teljesítés (hónapja)
+                    res.get("Kifizetés hónapja", ""), # N: Teljesítés hónapja
                     res.get("Nettó", ""), # O: Nettó
                     res.get("Áfa", ""), # P: Áfa
                     res.get("Bruttó", ""), # Q: Bruttó
                     res.get("Pénznem", ""), # R: Pénznem
-                    res.get("Nettó HUF", ""), # S: Nettó
-                    res.get("Áfa HUF", ""), # T: Áfa
+                    res.get("Nettó HUF", ""), # S: Nettó HUF
+                    res.get("Áfa HUF", ""), # T: Áfa HUF
                     "", # U: Fizetve
                     res.get("EUR fx", "") # V: EUR fx
                 ]
             
-            # Robusztus sorkeresés (az A oszlop hossza alapján)
+            # Robusztus sorkeresés
             values = target_ws.get_all_values()
             next_row_index = len(values) + 1
             
-            # Adat beillesztése a pontos cellatartományba
             target_ws.update(
                 range_name=f"A{next_row_index}", 
                 values=[row], 
                 value_input_option='USER_ENTERED'
             )
         
-        st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
+        st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a '{SHEET_NAME}' táblázatba!")
         st.balloons()
         
     except Exception as e:
         st.error(f"Hiba a táblázat írásakor: {e}")
 
-    # Megjelenítés a weboldalon (csak az ellenőrzéshez)
+    # Megjelenítés a weboldalon
     st.dataframe(pd.DataFrame(all_results))
