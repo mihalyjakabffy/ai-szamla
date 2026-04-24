@@ -9,7 +9,7 @@ import io
 st.set_page_config(page_title="Számla Mester Pro", page_icon="🧾", layout="wide")
 st.title("Realign-Számlafeldolgozó (Export Verzió)")
 
-# --- BEÁLLÍTÁSOK ---
+# --- BEÁLLÍTÁSOK ÉS MODELLVÁLASZTÓ ---
 st.sidebar.header("⚙️ Beállítások")
 API_KEY = st.sidebar.text_input("Gemini API kulcs:", type="password")
 
@@ -18,7 +18,16 @@ if not API_KEY:
     st.stop()
 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+# --- VISSZATETT MODELLVÁLASZTÓ ---
+try:
+    valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
+    selected_model_name = st.sidebar.selectbox("🤖 AI Modell:", valid_models, index=alap_index)
+    model = genai.GenerativeModel(selected_model_name)
+except Exception as e:
+    st.error("Hiba az API kulccsal! Ellenőrizd a beírt adatot.")
+    st.stop()
 
 # --- FELTÖLTÉS ---
 st.info("💡 A program szétválogatja a számlákat, a letöltött Excelből pedig egy mozdulattal átmásolhatod az adatokat a saját könyvelési táblázatodba.")
