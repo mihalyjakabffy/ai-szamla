@@ -1,4 +1,5 @@
 streamlit
 google-generativeai
 pandas
-openpyxl
+gspread
+google-auth
