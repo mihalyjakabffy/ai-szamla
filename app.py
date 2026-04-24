@@ -71,9 +71,9 @@ if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
     Mezők:
     {
       "Szállító": "...", "Számlaszám": "...", "Számla kelte": "YYYY-MM-DD",
-      "Számla teljesítésének dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
-      "Teljesítés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
-      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó huf": "szám", "Áfa huf": "szám",
+      "Teljesítés dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
+      "Kifizetés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
+      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó HUF": "szám", "Áfa HUF": "szám",
       "EUR fx": "szám"
     }
     Szabályok: 
