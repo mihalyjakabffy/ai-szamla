@@ -100,52 +100,50 @@ if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
 
     # ADATOK ÖSSZEFŰZÉSE
     new_df = pd.DataFrame(all_new_rows)
+    final_df_for_display = new_df.copy() # Ezt mutatjuk meg a képernyőn
 
     if master_file:
-    # 1. Megnyitjuk a meglévő fájlt úgy, hogy megmaradjon a formázás
-    wb = openpyxl.load_workbook(master_file)
-    
-    # Megkeressük a megfelelő fület (vagy az elsőt)
-    # Ha a szétválogatást használod, akkor a 'Bejövő' vagy 'Kimenő' fület:
-    ws = wb['Bejövő'] # Vagy wb.active
-    
-    # 2. Csak az ÚJ sorokat adjuk hozzá az aljához
-    for r in dataframe_to_rows(new_df, index=False, header=False):
-        ws.append(r)
-    
-    # 3. Mentés egy bufferbe a letöltéshez
-    output = io.BytesIO()
-    wb.save(output)
-    final_data = output.getvalue()
-else:
-    # Ha nincs mester fájl, marad a régi Pandas módszer az új fájlhoz
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        new_df.to_excel(writer, index=False, sheet_name='Számlák')
-    final_data = output.getvalue()
+        # 1. Megnyitjuk a meglévő fájlt úgy, hogy megmaradjon a formázás
+        wb = openpyxl.load_workbook(master_file)
+        
+        # Megkeressük a megfelelő fület
+        if 'Bejövő' in wb.sheetnames:
+            ws = wb['Bejövő']
+        else:
+            ws = wb.active # Ha nincs Bejövő fül, az első elérhető fület használja
+        
+        # 2. Csak az ÚJ sorokat adjuk hozzá az aljához
+        for r in dataframe_to_rows(new_df, index=False, header=False):
+            ws.append(r)
+        
+        # 3. Mentés egy bufferbe a letöltéshez
+        output = io.BytesIO()
+        wb.save(output)
+        final_data = output.getvalue()
+        
+        # Összeolvassuk a régit is, hogy a weblapon egyben lássuk az adatokat
+        try:
+            old_df = pd.read_excel(master_file)
+            final_df_for_display = pd.concat([old_df, new_df], ignore_index=True)
+        except:
+            pass
 
-# A letöltő gombnál pedig a 'final_data'-t használjuk
-st.download_button(
-    label="⬇️ Formátum-megőrző Excel letöltése",
-    data=final_data,
-    file_name="konyveles_frissitve.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+    else:
+        # Ha nincs mester fájl, marad a régi Pandas módszer az új fájlhoz
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            new_df.to_excel(writer, index=False, sheet_name='Bejövő')
+        final_data = output.getvalue()
 
-    # MEGJELENÍTÉS
+    # MEGJELENÍTÉS A WEBOLDALON
     st.subheader("📊 Összesített táblázat")
-    st.dataframe(final_df, use_container_width=True)
+    st.dataframe(final_df_for_display, use_container_width=True)
 
-    # EXCEL GENERÁLÁS (XLSX)
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        final_df.to_excel(writer, index=False, sheet_name='Számlák')
-    
+    # A letöltő gomb
     st.download_button(
-        label="⬇️ Frissített Mester Excel letöltése (.xlsx)",
-        data=output.getvalue(),
-        file_name="frissitett_konyveles.xlsx",
+        label="⬇️ Formátum-megőrző Excel letöltése",
+        data=final_data,
+        file_name="konyveles_frissitve.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    
     st.success("Kész! Töltsd le a fájlt és nyisd meg Excelben.")
