@@ -11,8 +11,8 @@ from google.oauth2.service_account import Credentials
 from google.api_core.exceptions import GoogleAPIError
 import google.auth.exceptions
 
-st.set_page_config(page_title="Realign AI Táblázatkezelő", page_icon="📊", layout="wide")
-st.title("🚀 Realign AI -> Google Sheets Integráció")
+st.set_page_config(page_title="Realign AI Számlakezelő", page_icon="📊", layout="wide")
+st.title("🚀 Realign Számlakezelő AI -> Google Sheets Integráció")
 
 # --- BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
