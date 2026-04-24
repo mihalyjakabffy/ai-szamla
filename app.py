@@ -6,6 +6,7 @@ import os
 import concurrent.futures
 import gspread
 import re
+import uuid
 from google.oauth2.service_account import Credentials
 from google.api_core.exceptions import GoogleAPIError
 import google.auth.exceptions
@@ -62,19 +63,18 @@ except Exception as e:
 # --- FELTÖLTÉS ---
 uploaded_files = st.file_uploader("Számlák feltöltése (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
-# --- ADATTÍPUS TISZTÍTÓ FÜGGVÉNY (ÚJ) ---
+# --- ADATTÍPUS TISZTÍTÓ FÜGGVÉNY ---
 def clean_number(val, to_float=False):
-    """Megtisztítja a szöveges számokat (pl. '10 000 Ft', '1.234,50') igazi számmá."""
+    """Megtisztítja a szöveges számokat (pl. '10 000 Ft', '1.234,50', '€ 100') igazi számmá."""
     if val is None:
         return ""
     val_str = str(val).strip()
     if not val_str or val_str.upper() in ["HIBA: NEM TALÁLHATÓ", "NONE", "NULL", "-", "HIBA"]:
         return ""
     
-    # Eltávolítunk minden betűt (pl. Ft, EUR, HUF)
-    val_str = re.sub(r'[A-Za-z]', '', val_str)
-    # Eltávolítjuk a szóközöket
-    val_str = val_str.replace(' ', '').replace('\xa0', '')
+    # JAVÍTÁS: Szigorú szűrés, csak a számjegyeket, pontot, vesszőt és mínuszt hagyjuk meg.
+    # Ez eltüntet minden valutajelet (Ft, EUR, $, €) és rejtett szóközt is.
+    val_str = re.sub(r'[^\d.,-]', '', val_str)
     
     # Okos tizedesjel felismerés
     if '.' in val_str and ',' in val_str:
@@ -101,7 +101,9 @@ def clean_number(val, to_float=False):
 # --- BIZTONSÁGOS FELDOLGOZÓ FÜGGVÉNY ---
 def process_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
-    temp_path = f"temp_{filename}"
+    # JAVÍTÁS: Egyedi azonosító generálása a versenyhelyzet (race condition) elkerülésére
+    unique_id = uuid.uuid4().hex[:8]
+    temp_path = f"temp_{unique_id}_{filename}"
     sample_file = None 
     
     try:
@@ -200,9 +202,10 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
                 ]
                 incoming_rows.append(row)
 
+        # JAVÍTÁS: get_all_values() helyett col_values(1) használata a villámgyors és memóriakímélő futásért
         # 2. Bejövő adatok EGYBEN történő kiírása
         if incoming_rows:
-            next_row_index_in = len(ws_in.get_all_values()) + 1
+            next_row_index_in = len(ws_in.col_values(1)) + 1
             ws_in.update(
                 range_name=f"A{next_row_index_in}", 
                 values=incoming_rows, 
@@ -211,7 +214,7 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
 
         # 3. Kimenő adatok EGYBEN történő kiírása
         if outgoing_rows:
-            next_row_index_out = len(ws_out.get_all_values()) + 1
+            next_row_index_out = len(ws_out.col_values(1)) + 1
             ws_out.update(
                 range_name=f"A{next_row_index_out}", 
                 values=outgoing_rows, 
