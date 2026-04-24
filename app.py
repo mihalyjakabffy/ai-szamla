@@ -6,6 +6,8 @@ import os
 import concurrent.futures
 import gspread
 from google.oauth2.service_account import Credentials
+from google.api_core.exceptions import GoogleAPIError
+import google.auth.exceptions
 
 st.set_page_config(page_title="Realign AI Táblázatkezelő", page_icon="📊", layout="wide")
 st.title("🚀 Realign AI -> Google Sheets Integráció")
@@ -46,8 +48,14 @@ try:
     selected_model_name = st.sidebar.selectbox("🤖 AI Modell (Engine):", valid_models, index=alap_index)
     model = genai.GenerativeModel(selected_model_name)
 
+except google.auth.exceptions.GoogleAuthError as e:
+    st.error(f"Hitelesítési hiba a Google felé. Ellenőrizd a JSON kulcsot! (Részletek: {e})")
+    st.stop()
+except gspread.exceptions.APIError as e:
+    st.error(f"Google API Hiba (pl. nincs engedélyezve a Drive/Sheets API a Cloud Console-ban): {e}")
+    st.stop()
 except Exception as e:
-    st.error(f"Hiba a Google-kapcsolat vagy a fájllista lekérése során: {e}")
+    st.error(f"Váratlan hiba a Google-kapcsolat vagy a fájllista lekérése során: {e}")
     st.stop()
 
 # --- FELTÖLTÉS ---
@@ -77,9 +85,13 @@ def process_invoice(uploaded_file, prompt, model):
         except json.JSONDecodeError:
             # Ha mégis valami torzult adat jönne, elkapjuk a hibát
             return {"Szállító": f"HIBA: Érvénytelen JSON formátumot küldött az AI. Fájl: {filename}"}
+        except GoogleAPIError as api_err:
+            return {"Szállító": f"HIBA: AI szolgáltatás hiba (pl. túlterheltség). Fájl: {filename} - {api_err}"}
+        except OSError as os_err:
+            return {"Szállító": f"HIBA: Fájl írási/olvasási hiba. Fájl: {filename} - {os_err}"}
             
     except Exception as e:
-        return {"Szállító": f"HIBA: {filename} - {str(e)}"}
+        return {"Szállító": f"HIBA (Váratlan): {filename} - {str(e)}"}
         
     finally:
         # Helyi és felhős takarítás
@@ -168,8 +180,14 @@ if uploaded_files and st.button("Feldolgozás és Mentés a Google Táblázatba"
         st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a '{SHEET_NAME}' táblázatba!")
         st.balloons()
         
+    except gspread.exceptions.SpreadsheetNotFound:
+        st.error(f"Hiba: A '{SHEET_NAME}' nevű táblázat nem található! Ellenőrizd a megosztást a Service Accounttal.")
+    except gspread.exceptions.WorksheetNotFound as e:
+        st.error(f"Hiba: Hiányzó munkalap! A táblázatban lennie kell 'Bejövő' és 'Kimenő' fülnek. (Részletek: {e})")
+    except gspread.exceptions.APIError as e:
+        st.error(f"Google Sheets API hiba írás közben (pl. túl sok kérés vagy kvóta túllépés): {e}")
     except Exception as e:
-        st.error(f"Hiba a táblázat írásakor: {e}")
+        st.error(f"Váratlan hiba a táblázat írásakor: {e}")
 
     # Megjelenítés a weboldalon
     st.dataframe(pd.DataFrame(all_results))
