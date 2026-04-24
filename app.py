@@ -105,8 +105,8 @@ for res in all_results:
     # 4. append_row helyett update-et használunk egy konkrét tartományra
     # Ez garantáltan az új sor elejére (A oszlop) fogja tenni az adatot
     target_ws.update(range_name=f"A{next_row_index}", values=[row], value_input_option='USER_ENTERED')
-        st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
-        st.balloons()
+    st.success(f"✅ Sikeresen rögzítve {len(all_results)} számla a Google Táblázatba!")
+    st.balloons()
         
     except Exception as e:
         st.error(f"Hiba a táblázat írásakor: {e}")
