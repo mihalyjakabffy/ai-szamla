@@ -6,8 +6,8 @@ import os
 import concurrent.futures
 import io
 
-st.set_page_config(page_title="AI Számla Mester", page_icon="🚀", layout="wide")
-st.title("Realign Számlafeldolgozó")
+st.set_page_config(page_title="Számla Mester", page_icon="🚀", layout="wide")
+st.title("Realign-Számlafeldolgozó")
 
 # --- OLDALSÁV: BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
@@ -33,13 +33,13 @@ except:
 
 # 1. LÉPÉS: Mester fájl (Opcionális)
 st.subheader("1. Lépés: Meglévő táblázat betöltése (Opcionális)")
-master_file = st.file_uploader("Ha van meglévő könyvelési táblázatod, töltsd fel (.xlsx)", type=["xlsx"])
+master_file = st.file_uploader("A meglévő könyvelési táblázatod itt töltsd fel (.xlsx)", type=["xlsx"])
 if master_file:
     st.success("Mester táblázat betöltve. Az új számlák ennek az aljára fognak kerülni.")
 
 # 2. LÉPÉS: Új számlák
 st.subheader("2. Lépés: Új számlák feltöltése")
-uploaded_files = st.file_uploader("Húzd ide az új számlákat (többet is egyszerre)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
+uploaded_files = st.file_uploader("Húzd ide az új számlákat (akár többet is egyszerre)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
 
 # --- FELDOLGOZÓ FÜGGVÉNY (PÁRHUZAMOS FUTTATÁSHOZ) ---
 def process_invoice(uploaded_file, prompt, model):
