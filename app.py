@@ -7,8 +7,8 @@ import concurrent.futures
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="Realign AI Táblázatkezelő", page_icon="📊", layout="wide")
-st.title("🚀 Realign AI -> Google Sheets Integráció")
+st.set_page_config(page_title="Realign AI számlakezelő", page_icon="📊", layout="wide")
+st.title("🚀 Realign számlakezelő AI -> Google Sheets Integráció")
 
 # --- BEÁLLÍTÁSOK ---
 st.sidebar.header("⚙️ Beállítások")
