@@ -64,16 +64,19 @@ def process_invoice(uploaded_file, prompt, model):
             f.write(uploaded_file.getbuffer())
             
         sample_file = genai.upload_file(path=temp_path)
-        response = model.generate_content([sample_file, prompt])
         
-        text = response.text
-        start_idx = text.find('{')
-        end_idx = text.rfind('}')
-        if start_idx != -1 and end_idx != -1:
-            clean_json = text[start_idx:end_idx+1]
-            return json.loads(clean_json)
-        else:
-            return {"Szállító": f"HIBA: Nem található JSON a válaszban. Fájl: {filename}"}
+        # --- BIZTONSÁGOS JSON KIKÉNYSZERÍTÉS API SZINTEN ---
+        response = model.generate_content(
+            [sample_file, prompt],
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        try:
+            # Mivel a Google garantálja a JSON formátumot, azonnal parse-olhatjuk
+            return json.loads(response.text)
+        except json.JSONDecodeError:
+            # Ha mégis valami torzult adat jönne, elkapjuk a hibát
+            return {"Szállító": f"HIBA: Érvénytelen JSON formátumot küldött az AI. Fájl: {filename}"}
             
     except Exception as e:
         return {"Szállító": f"HIBA: {filename} - {str(e)}"}
