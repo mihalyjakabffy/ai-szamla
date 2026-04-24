@@ -66,7 +66,7 @@ def process_invoice(uploaded_file, prompt, model):
 if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
     all_new_rows = []
     
-   prompt = """
+    prompt= """
     Elemezd a számlát és adj JSON választ. Ha valami hiányzik: "HIBA: Nem található".
     Mezők:
     {
