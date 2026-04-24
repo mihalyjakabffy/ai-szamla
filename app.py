@@ -15,9 +15,26 @@ if not API_KEY:
     st.warning("Kérlek, add meg az API kulcsodat a folytatáshoz!")
     st.stop() # Itt megállítjuk a programot, amíg nincs kulcs
 
-# --- AI Konfiguráció ---
+# --- AI Konfiguráció és Modell Választó ---
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-flash-latest')
+
+try:
+    # Lekérjük az elérhető modelleket az adott kulcshoz
+    valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    if valid_models:
+        # Próbáljuk alapértelmezetten a 'flash'-t kiválasztani a listából, ha létezik
+        alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
+        selected_model = st.selectbox("🤖 Elérhető AI modellek a fiókodban:", valid_models, index=alap_index)
+        model = genai.GenerativeModel(selected_model)
+    else:
+        st.error("Nem található engedélyezett modell ehhez az API kulcshoz!")
+        st.stop()
+        
+except Exception as e:
+    # Ha valaki rossz kulcsot ír be, itt elkapjuk a hibát, és nem omlik össze a program
+    st.error("❌ Érvénytelen API kulcs! Kérlek, ellenőrizd, hogy helyesen másoltad-e be.")
+    st.stop()
 
 # --- Fájl feltöltés ---
 uploaded_file = st.file_uploader("Húzd ide a számlát (PDF, JPG, PNG)", type=["pdf", "jpg", "jpeg", "png"])
