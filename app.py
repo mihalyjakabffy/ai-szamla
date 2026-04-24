@@ -4,12 +4,13 @@ import json
 import pandas as pd
 import os
 import concurrent.futures
+import io
 
-st.set_page_config(page_title="Realign Számlafeldolgozó", page_icon="⚡", layout="wide")
-st.title("⚡ Tömeges Számla- és Nyugtafeldolgozó AI (Turbó mód)")
+st.set_page_config(page_title="AI Számla Mester", page_icon="🚀", layout="wide")
+st.title("Realign Számlafeldolgozó")
 
-# --- API KULCS BEKÉRÉSE ---
-st.sidebar.header("Beállítások")
+# --- OLDALSÁV: BEÁLLÍTÁSOK ---
+st.sidebar.header("⚙️ Beállítások")
 API_KEY = st.sidebar.text_input("Gemini API kulcs:", type="password")
 
 if not API_KEY:
@@ -18,29 +19,36 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# --- MODELL VÁLASZTÓ ---
+# Modell választó
 try:
     valid_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    if valid_models:
-        alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
-        selected_model_name = st.sidebar.selectbox("Válassz modellt:", valid_models, index=alap_index)
-        model = genai.GenerativeModel(selected_model_name)
-    else:
-        st.error("Nincs engedélyezett modell.")
-        st.stop()
-except Exception:
+    alap_index = valid_models.index('gemini-1.5-flash-latest') if 'gemini-1.5-flash-latest' in valid_models else 0
+    selected_model_name = st.sidebar.selectbox("AI Modell:", valid_models, index=alap_index)
+    model = genai.GenerativeModel(selected_model_name)
+except:
     st.error("Hiba az API kulccsal! Ellenőrizd a beírt adatot.")
     st.stop()
 
-# --- FÜGGVÉNY EGYETLEN SZÁMLA FELDOLGOZÁSÁHOZ ---
-def process_single_invoice(uploaded_file, prompt, model):
+# --- FŐOLDAL LÉPÉSEI ---
+
+# 1. LÉPÉS: Mester fájl (Opcionális)
+st.subheader("1. Lépés: Meglévő táblázat betöltése (Opcionális)")
+master_file = st.file_uploader("Ha van meglévő könyvelési táblázatod, töltsd fel (.xlsx)", type=["xlsx"])
+if master_file:
+    st.success("Mester táblázat betöltve. Az új számlák ennek az aljára fognak kerülni.")
+
+# 2. LÉPÉS: Új számlák
+st.subheader("2. Lépés: Új számlák feltöltése")
+uploaded_files = st.file_uploader("Húzd ide az új számlákat (többet is egyszerre)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
+
+# --- FELDOLGOZÓ FÜGGVÉNY (PÁRHUZAMOS FUTTATÁSHOZ) ---
+def process_invoice(uploaded_file, prompt, model):
     filename = uploaded_file.name
     temp_path = f"temp_{filename}"
-    
     try:
         with open(temp_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
-            
+        
         sample_file = genai.upload_file(path=temp_path)
         response = model.generate_content([sample_file, prompt])
         
@@ -48,81 +56,74 @@ def process_single_invoice(uploaded_file, prompt, model):
         data = json.loads(clean_json)
         data["Fájlnév"] = filename
         return data
-        
     except Exception as e:
         return {"Fájlnév": filename, "Szállító": f"HIBA: {str(e)}"}
-        
     finally:
         if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except:
-                pass
+            try: os.remove(temp_path)
+            except: pass
 
-# --- FÁJL FELTÖLTÉS ---
-uploaded_files = st.file_uploader("Húzd ide a számlákat (többet is kijelölhetsz egyszerre!)", type=["pdf", "jpg", "jpeg", "png"], accept_multiple_files=True)
-
-if uploaded_files and st.button("Összes fájl feldolgozása"):
-    all_extracted_data = []
+# --- INDÍTÁS ---
+if uploaded_files and st.button("Feldolgozás és Összefűzés indítása"):
+    all_new_rows = []
+    
+    prompt = """
+    Elemezd a számlát és adj JSON választ. Ha valami hiányzik: "HIBA: Nem található".
+    Mezők:
+    {
+      "Szállító": "...", "Számlaszám": "...", "Számla kelte": "YYYY-MM-DD",
+      "Számla teljesítésének dátuma": "YYYY-MM-DD", "Fizetési határidő": "YYYY-MM-DD",
+      "Teljesítés hónapja": "magyar hónapnév kisbetűvel", "Nettó": "szám", "Áfa": "szám",
+      "Bruttó": "szám", "Pénznem": "3 betűs ISO (HUF/EUR)", "Nettó huf": "szám", "Áfa huf": "szám"
+    }
+    Szabályok: Teljesítés hónapja csak a hónap neve legyen (pl. január). Pénznemnél tilos a Ft/€ jel, csak HUF/EUR.
+    """
+    
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # --- EZT A RÉSZT SZIGORÍTOTTUK (PROMPT ENGINEERING) ---
-    prompt = """
-    Elemezd a csatolt számlát, és nyerd ki az adatokat pontosan ebben a JSON formátumban.
-    Ha valamit egyértelműen nem találsz a számlán, az értékhez írd be: "HIBA: Nem található".
-    
-    {
-      "Szállító": "...", 
-      "Számlaszám": "...", 
-      "Számla kelte": "YYYY-MM-DD",
-      "Számla teljesítésének dátuma": "YYYY-MM-DD", 
-      "Fizetési határidő": "YYYY-MM-DD",
-      "Teljesítés hónapja": "...", 
-      "Nettó": "...", 
-      "Áfa": "...",
-      "Bruttó": "...", 
-      "Pénznem": "...", 
-      "Nettó huf": "...", 
-      "Áfa huf": "..."
-    }
-    
-    Szigorú formai szabályok:
-    1. Csak és kizárólag a tisztított JSON objektumot válaszold, semmi más magyarázatot!
-    2. A "Teljesítés hónapja" mezőbe KIZÁRÓLAG a hónap neve kerülhet szövegesen, magyarul, kisbetűvel (pl. január, február, március). Évszámot és sorszámot NE írj ide!
-    3. A "Pénznem" mező kötelezően 3 betűs ISO kód legyen (pl. forint esetén: HUF, euró esetén: EUR). Tilos a következőket használni: Ft, Forint, €, Euro!
-    4. A számoknál tizedespontot használj, és a számok mellé a mezőbe ne írj be pénznemet!
-    """
-    
-    status_text.text("🚀 Párhuzamos feldolgozás indítása...")
-    
+    # Turbó mód: egyszerre 3 szálon
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        jovabagyott_feladatok = {executor.submit(process_single_invoice, file, prompt, model): file for file in uploaded_files}
+        futures = {executor.submit(process_invoice, f, prompt, model): f for f in uploaded_files}
         
-        kesz_darab = 0
-        for future in concurrent.futures.as_completed(jovabagyott_feladatok):
-            eredmeny = future.result()
-            all_extracted_data.append(eredmeny)
-            
-            kesz_darab += 1
-            progress_bar.progress(kesz_darab / len(uploaded_files))
-            status_text.text(f"Feldolgozva: {kesz_darab}/{len(uploaded_files)} fájl...")
+        for i, future in enumerate(concurrent.futures.as_completed(futures)):
+            result = future.result()
+            all_new_rows.append(result)
+            progress_bar.progress((i + 1) / len(uploaded_files))
+            status_text.text(f"Kész: {i+1}/{len(uploaded_files)} fájl")
 
-    status_text.text("✅ Minden fájl feldolgozva!")
+    # ADATOK ÖSSZEFŰZÉSE
+    new_df = pd.DataFrame(all_new_rows)
+    # Oszlopok sorrendje
+    cols = ["Fájlnév"] + [c for c in new_df.columns if c != "Fájlnév"]
+    new_df = new_df[cols]
 
-    # --- ÖSSZESÍTÉS ÉS LETÖLTÉS ---
-    if all_extracted_data:
-        full_df = pd.DataFrame(all_extracted_data)
-        cols = ["Fájlnév"] + [c for c in full_df.columns if c != "Fájlnév"]
-        full_df = full_df[cols]
-        
-        st.subheader("Összesített eredmények:")
-        st.dataframe(full_df, use_container_width=True)
-        
-        csv = full_df.to_csv(index=False, sep=';', encoding='utf-8-sig')
-        st.download_button(
-            label="⬇️ Összesített táblázat letöltése (Excel CSV)",
-            data=csv,
-            file_name="osszesitett_szamlak_turbo.csv",
-            mime="text/csv",
-        )
+    if master_file:
+        try:
+            old_df = pd.read_excel(master_file)
+            final_df = pd.concat([old_df, new_df], ignore_index=True)
+            st.info("Az új adatokat hozzáfűztük a feltöltött mester táblázathoz.")
+        except Exception as e:
+            st.error(f"Hiba a mester fájl beolvasásakor: {e}")
+            final_df = new_df
+    else:
+        final_df = new_df
+        st.warning("Nem töltöttél fel mester fájlt, így csak az új adatokat tartalmazza a táblázat.")
+
+    # MEGJELENÍTÉS
+    st.subheader("📊 Összesített táblázat")
+    st.dataframe(final_df, use_container_width=True)
+
+    # EXCEL GENERÁLÁS (XLSX)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        final_df.to_excel(writer, index=False, sheet_name='Számlák')
+    
+    st.download_button(
+        label="⬇️ Frissített Mester Excel letöltése (.xlsx)",
+        data=output.getvalue(),
+        file_name="frissitett_konyveles.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+    st.success("Kész! Töltsd le a fájlt és nyisd meg Excelben.")
