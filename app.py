@@ -14,14 +14,27 @@ import google.auth.exceptions
 st.set_page_config(page_title="Realign AI Számlakezelő", page_icon="📊", layout="wide")
 st.title("🚀 Realign Számlakezelő AI -> Google Sheets Integráció")
 
-# --- BEÁLLÍTÁSOK ---
-st.sidebar.header("⚙️ Beállítások")
-API_KEY = st.sidebar.text_input("Gemini API kulcs:", type="password")
+# --- BEÁLLÍTÁSOK (JELSZAVAS VÉDELEM) ---
+st.sidebar.header("🔐 Bejelentkezés")
+user_password = st.sidebar.text_input("Belépési jelszó:", type="password")
 
-if not API_KEY:
-    st.warning("Kérlek, add meg az API kulcsodat a folytatáshoz!")
+if not user_password:
+    st.info("👋 Kérlek, add meg a jelszót a rendszer használatához!")
     st.stop()
 
+# Jelszó ellenőrzése
+try:
+    if user_password != st.secrets["APP_PASSWORD"]:
+        st.sidebar.error("❌ Helytelen jelszó!")
+        st.stop()
+    else:
+        st.sidebar.success("✅ Sikeres belépés!")
+        # Ha a jelszó jó, a háttérből behúzzuk az igazi API kulcsot
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error("Rendszerhiba: Nincs beállítva a jelszó vagy az API kulcs a Streamlit Secrets-ben!")
+    st.stop()
+    
 # AI inicializálás
 genai.configure(api_key=API_KEY)
 
